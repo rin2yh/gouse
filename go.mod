@@ -1,3 +1,3 @@
-module github.com/YuukiHayashi0510/gouse
+module github.com/rin2yh/gouse
 
 go 1.21
