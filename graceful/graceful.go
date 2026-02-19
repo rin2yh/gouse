@@ -1,3 +1,18 @@
+// Package graceful provides HTTP server startup and graceful shutdown.
+//
+// Basic usage with default timeout (5 seconds):
+//
+//	srv := &http.Server{Addr: ":8080", Handler: mux}
+//	if err := graceful.Run(ctx, srv, nil); err != nil {
+//	    log.Fatal(err)
+//	}
+//
+// With custom timeout and cleanup:
+//
+//	graceful.Run(ctx, srv, &graceful.Config{
+//	    ShutdownTimeout: 10 * time.Second,
+//	    Cleanups:        []func(){db.Close},
+//	})
 package graceful
 
 import (
@@ -9,22 +24,39 @@ import (
 
 const defaultShutdownTimeout = 5 * time.Second
 
-// Config holds configuration for Run.
-type Config struct {
-	ShutdownTimeout time.Duration
-	Cleanups        []func()
+// Server is the interface required by Run.
+// *http.Server satisfies this interface.
+type Server interface {
+	ListenAndServe() error
+	Shutdown(ctx context.Context) error
 }
 
-// Run starts the HTTP server and blocks until the context is cancelled
-// or the server encounters a fatal error. On cancellation, it performs a
-// graceful shutdown within Config.ShutdownTimeout, then runs Config.Cleanups
-// in order (e.g. closing DB connections).
-// If cfg is nil, a default ShutdownTimeout of 5 seconds is used.
-func Run(ctx context.Context, srv *http.Server, cfg *Config) error {
-	if cfg == nil {
-		cfg = &Config{ShutdownTimeout: defaultShutdownTimeout}
-	} else if cfg.ShutdownTimeout == 0 {
-		cfg.ShutdownTimeout = defaultShutdownTimeout
+// Config holds optional configuration for Run.
+// The zero value is valid; ShutdownTimeout defaults to 5 seconds.
+type Config struct {
+	// ShutdownTimeout is the maximum duration to wait for in-flight requests
+	// to complete before forcibly closing connections.
+	// Defaults to 5 seconds if zero.
+	ShutdownTimeout time.Duration
+
+	// Cleanups are functions called in order after the server shuts down
+	// (e.g. closing database connections, flushing caches).
+	Cleanups []func()
+}
+
+// Run starts srv and blocks until ctx is cancelled or the server fails.
+// On cancellation, it shuts down gracefully within the configured timeout,
+// then runs each cleanup function in order.
+//
+// If cfg is nil, a 5-second shutdown timeout is used with no cleanups.
+func Run(ctx context.Context, srv Server, cfg *Config) error {
+	timeout := defaultShutdownTimeout
+	var cleanups []func()
+	if cfg != nil {
+		if cfg.ShutdownTimeout > 0 {
+			timeout = cfg.ShutdownTimeout
+		}
+		cleanups = cfg.Cleanups
 	}
 
 	serverErr := make(chan error, 1)
@@ -41,14 +73,14 @@ func Run(ctx context.Context, srv *http.Server, cfg *Config) error {
 	case <-ctx.Done():
 	}
 
-	shutdownCtx, cancel := context.WithTimeout(context.Background(), cfg.ShutdownTimeout)
+	shutdownCtx, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()
 
 	if err := srv.Shutdown(shutdownCtx); err != nil {
 		return err
 	}
 
-	for _, cleanup := range cfg.Cleanups {
+	for _, cleanup := range cleanups {
 		cleanup()
 	}
 
