@@ -1,4 +1,4 @@
-package httpx_test
+package graceful_test
 
 import (
 	"context"
@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/YuukiHayashi0510/gouse/httpx"
+	"github.com/YuukiHayashi0510/gouse/graceful"
 )
 
 func freePort(t *testing.T) string {
@@ -42,7 +42,7 @@ func TestRunGracefulShutdown(t *testing.T) {
 
 	done := make(chan error, 1)
 	go func() {
-		done <- httpx.Run(ctx, srv, 5*time.Second)
+		done <- graceful.Run(ctx, srv, 5*time.Second)
 	}()
 
 	if err := waitForServer(addr, 2*time.Second); err != nil {
@@ -72,7 +72,7 @@ func TestRunServerError(t *testing.T) {
 
 	srv := &http.Server{Addr: addr, Handler: http.DefaultServeMux}
 
-	err = httpx.Run(context.Background(), srv, 5*time.Second)
+	err = graceful.Run(context.Background(), srv, 5*time.Second)
 	if err == nil {
 		t.Fatal("expected error when port is already in use, got nil")
 	}
@@ -92,7 +92,7 @@ func TestRunHandlesRequests(t *testing.T) {
 
 	done := make(chan error, 1)
 	go func() {
-		done <- httpx.Run(ctx, srv, 5*time.Second)
+		done <- graceful.Run(ctx, srv, 5*time.Second)
 	}()
 
 	if err := waitForServer(addr, 2*time.Second); err != nil {
