@@ -6,7 +6,7 @@ import (
 	"net/http"
 	"testing"
 
-	"github.com/rin2yh/gouse/graceful"
+	"github.com/rin2yh/gouse/net/graceful"
 )
 
 // listenerServer wraps *http.Server with a pre-bound listener to avoid the

@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/rin2yh/gouse/graceful"
+	"github.com/rin2yh/gouse/net/graceful"
 )
 
 func TestRun(t *testing.T) {
