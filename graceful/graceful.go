@@ -1,18 +1,35 @@
 // Package graceful provides HTTP server startup and graceful shutdown.
 //
-// Typical usage:
+// Typical usage (signal-based shutdown):
 //
+//	ctx := context.Background()
 //	srv := &http.Server{Addr: ":8080", Handler: mux}
-//	if err := graceful.Run(context.Background(), srv, nil); err != nil {
+//	if err := graceful.Run(ctx, srv, nil); err != nil {
 //	    log.Fatal(err)
 //	}
 //
-// With custom timeout and cleanup (e.g. closing DB after shutdown):
+// With custom timeout, cleanup, and programmatic cancellation via parent context:
 //
-//	graceful.Run(context.Background(), srv, &graceful.Config{
+//	parent, cancel := context.WithCancel(context.Background())
+//	defer cancel()
+//
+//	srv := &http.Server{Addr: ":8080", Handler: mux}
+//
+//	// In some other goroutine or callback, call cancel() when you want to
+//	// trigger a graceful shutdown without relying solely on OS signals.
+//	//
+//	//	go func() {
+//	//	    if err := waitForCondition(); err != nil {
+//	//	        cancel()
+//	//	    }
+//	//	}()
+//
+//	if err := graceful.Run(parent, srv, &graceful.Config{
 //	    ShutdownTimeout: 10 * time.Second,
 //	    Cleanups:        []func(){db.Close},
-//	})
+//	}); err != nil {
+//	    log.Fatal(err)
+//	}
 package graceful
 
 import (
