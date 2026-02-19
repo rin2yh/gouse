@@ -1,21 +1,15 @@
 // Package graceful provides HTTP server startup and graceful shutdown.
 //
-// Signal-based shutdown (typical production usage):
-//
-//	ctx, stop := graceful.NewContext(context.Background())
-//	defer stop()
+// Typical usage:
 //
 //	srv := &http.Server{Addr: ":8080", Handler: mux}
-//	if err := graceful.Run(ctx, srv, nil); err != nil {
+//	if err := graceful.Run(context.Background(), srv, nil); err != nil {
 //	    log.Fatal(err)
 //	}
 //
 // With custom timeout and cleanup (e.g. closing DB after shutdown):
 //
-//	ctx, stop := graceful.NewContext(context.Background())
-//	defer stop()
-//
-//	graceful.Run(ctx, srv, &graceful.Config{
+//	graceful.Run(context.Background(), srv, &graceful.Config{
 //	    ShutdownTimeout: 10 * time.Second,
 //	    Cleanups:        []func(){db.Close},
 //	})
@@ -55,24 +49,15 @@ type Config struct {
 	Cleanups []func()
 }
 
-// NewContext returns a context that is cancelled when SIGINT or SIGTERM is received.
-// The returned stop function must be called to release resources.
-//
-// Typical usage:
-//
-//	ctx, stop := graceful.NewContext(context.Background())
-//	defer stop()
-//	graceful.Run(ctx, srv, nil)
-func NewContext(parent context.Context) (context.Context, context.CancelFunc) {
-	return signal.NotifyContext(parent, syscall.SIGINT, syscall.SIGTERM)
-}
-
-// Run starts srv and blocks until ctx is cancelled or the server fails.
-// On cancellation, it shuts down gracefully within the configured timeout,
-// then runs each cleanup function in order.
+// Run starts srv and blocks until SIGINT/SIGTERM is received (or parent is
+// cancelled), then shuts down gracefully within the configured timeout and
+// runs each cleanup function in order.
 //
 // If cfg is nil, a 5-second shutdown timeout is used with no cleanups.
-func Run(ctx context.Context, srv Server, cfg *Config) error {
+func Run(parent context.Context, srv Server, cfg *Config) error {
+	ctx, stop := signal.NotifyContext(parent, syscall.SIGINT, syscall.SIGTERM)
+	defer stop()
+
 	timeout := defaultShutdownTimeout
 	var cleanups []func()
 	if cfg != nil {

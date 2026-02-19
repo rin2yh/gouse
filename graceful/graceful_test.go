@@ -39,23 +39,6 @@ func waitForServer(addr string, timeout time.Duration) error {
 	return context.DeadlineExceeded
 }
 
-func TestNewContext(t *testing.T) {
-	ctx, stop := graceful.NewContext(context.Background())
-	defer stop()
-
-	if ctx.Err() != nil {
-		t.Fatal("expected context to be active")
-	}
-
-	stop()
-
-	select {
-	case <-ctx.Done():
-	case <-time.After(time.Second):
-		t.Fatal("context was not cancelled after stop()")
-	}
-}
-
 func TestRun(t *testing.T) {
 	tests := []struct {
 		name string
@@ -83,7 +66,7 @@ func TestRun(t *testing.T) {
 				done <- graceful.Run(ctx, srv, tt.cfg)
 			}()
 
-			if err := waitForServer(addr, 2*time.Second); err != nil {
+			if err := waitForServer(addr, testStartTimeout); err != nil {
 				t.Fatal("server did not start in time:", err)
 			}
 
@@ -136,7 +119,7 @@ func TestRunCleanup(t *testing.T) {
 		})
 	}()
 
-	if err := waitForServer(addr, 2*time.Second); err != nil {
+	if err := waitForServer(addr, testStartTimeout); err != nil {
 		t.Fatal("server did not start in time:", err)
 	}
 
@@ -173,7 +156,7 @@ func TestRunHandlesRequests(t *testing.T) {
 		done <- graceful.Run(ctx, srv, nil)
 	}()
 
-	if err := waitForServer(addr, 2*time.Second); err != nil {
+	if err := waitForServer(addr, testStartTimeout); err != nil {
 		t.Fatal("server did not start in time:", err)
 	}
 
