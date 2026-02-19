@@ -40,7 +40,7 @@ func BenchmarkShutdown(b *testing.B) {
 		cleanups := noopCleanups(n)
 		cfg := &graceful.Config{Cleanups: cleanups}
 		b.Run(fmt.Sprintf("cleanups=%d", n), func(b *testing.B) {
-			for b.Loop() {
+			for i := 0; i < b.N; i++ {
 				srv := newBenchmarkServer()
 				ctx, cancel := context.WithCancel(context.Background())
 				done := make(chan error, 1)
