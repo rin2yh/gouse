@@ -34,30 +34,48 @@ func waitForServer(addr string, timeout time.Duration) error {
 	return context.DeadlineExceeded
 }
 
-func TestRunGracefulShutdown(t *testing.T) {
-	addr := freePort(t)
-	srv := &http.Server{Addr: addr, Handler: http.DefaultServeMux}
-
-	ctx, cancel := context.WithCancel(context.Background())
-
-	done := make(chan error, 1)
-	go func() {
-		done <- graceful.Run(ctx, srv, graceful.Config{ShutdownTimeout: 5 * time.Second})
-	}()
-
-	if err := waitForServer(addr, 2*time.Second); err != nil {
-		t.Fatal("server did not start in time:", err)
+func TestRun(t *testing.T) {
+	tests := []struct {
+		name string
+		cfg  *graceful.Config
+	}{
+		{
+			name: "with config",
+			cfg:  &graceful.Config{ShutdownTimeout: 5 * time.Second},
+		},
+		{
+			name: "nil config uses default",
+			cfg:  nil,
+		},
 	}
 
-	cancel()
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			addr := freePort(t)
+			srv := &http.Server{Addr: addr, Handler: http.DefaultServeMux}
 
-	select {
-	case err := <-done:
-		if err != nil {
-			t.Fatalf("expected nil error, got: %v", err)
-		}
-	case <-time.After(5 * time.Second):
-		t.Fatal("server did not shut down in time")
+			ctx, cancel := context.WithCancel(context.Background())
+
+			done := make(chan error, 1)
+			go func() {
+				done <- graceful.Run(ctx, srv, tt.cfg)
+			}()
+
+			if err := waitForServer(addr, 2*time.Second); err != nil {
+				t.Fatal("server did not start in time:", err)
+			}
+
+			cancel()
+
+			select {
+			case err := <-done:
+				if err != nil {
+					t.Fatalf("expected nil error, got: %v", err)
+				}
+			case <-time.After(5 * time.Second):
+				t.Fatal("server did not shut down in time")
+			}
+		})
 	}
 }
 
@@ -72,7 +90,7 @@ func TestRunServerError(t *testing.T) {
 
 	srv := &http.Server{Addr: addr, Handler: http.DefaultServeMux}
 
-	err = graceful.Run(context.Background(), srv, graceful.Config{ShutdownTimeout: 5 * time.Second})
+	err = graceful.Run(context.Background(), srv, nil)
 	if err == nil {
 		t.Fatal("expected error when port is already in use, got nil")
 	}
@@ -87,7 +105,7 @@ func TestRunCleanup(t *testing.T) {
 	var called []string
 	done := make(chan error, 1)
 	go func() {
-		done <- graceful.Run(ctx, srv, graceful.Config{
+		done <- graceful.Run(ctx, srv, &graceful.Config{
 			ShutdownTimeout: 5 * time.Second,
 			Cleanups: []func(){
 				func() { called = append(called, "first") },
@@ -130,7 +148,7 @@ func TestRunHandlesRequests(t *testing.T) {
 
 	done := make(chan error, 1)
 	go func() {
-		done <- graceful.Run(ctx, srv, graceful.Config{ShutdownTimeout: 5 * time.Second})
+		done <- graceful.Run(ctx, srv, nil)
 	}()
 
 	if err := waitForServer(addr, 2*time.Second); err != nil {
