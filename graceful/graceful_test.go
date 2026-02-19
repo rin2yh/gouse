@@ -16,14 +16,10 @@ const (
 	testStartTimeout    = 2 * time.Second
 )
 
-// errServerStartTimeout is returned by waitForServer when the server does not
-// respond to HTTP within the given timeout.
 var errServerStartTimeout = errors.New("server failed to start within timeout")
 
-// ── test server helpers ──────────────────────────────────────────────────────
-
-// listenerServer wraps *http.Server to use a pre-bound listener,
-// eliminating the TOCTOU race between freePort and ListenAndServe.
+// listenerServer wraps *http.Server with a pre-bound listener to avoid the
+// TOCTOU race between acquiring a free port and calling ListenAndServe.
 type listenerServer struct {
 	srv *http.Server
 	ln  net.Listener
@@ -32,8 +28,7 @@ type listenerServer struct {
 func (s *listenerServer) ListenAndServe() error              { return s.srv.Serve(s.ln) }
 func (s *listenerServer) Shutdown(ctx context.Context) error { return s.srv.Shutdown(ctx) }
 
-// controllableServer lets tests inject arbitrary ListenAndServe / Shutdown
-// behaviour without relying on OS-level port allocation.
+// controllableServer injects arbitrary ListenAndServe / Shutdown behaviour.
 type controllableServer struct {
 	listenFunc   func() error
 	shutdownFunc func(context.Context) error
@@ -47,9 +42,6 @@ func (s *controllableServer) Shutdown(ctx context.Context) error {
 	return nil
 }
 
-// newTestServer binds a listener on an OS-assigned port and returns a Server
-// that delegates to Serve(ln), plus the bound address.
-// The listener is closed via t.Cleanup when the test ends.
 func newTestServer(t *testing.T, handler http.Handler) (graceful.Server, string) {
 	t.Helper()
 	ln, err := net.Listen("tcp", "127.0.0.1:0")
@@ -60,7 +52,6 @@ func newTestServer(t *testing.T, handler http.Handler) (graceful.Server, string)
 	return &listenerServer{srv: &http.Server{Handler: handler}, ln: ln}, ln.Addr().String()
 }
 
-// waitForServer polls addr until the HTTP layer responds or timeout expires.
 func waitForServer(addr string, timeout time.Duration) error {
 	client := &http.Client{Timeout: 100 * time.Millisecond}
 	deadline := time.Now().Add(timeout)
@@ -75,9 +66,8 @@ func waitForServer(addr string, timeout time.Duration) error {
 	return errServerStartTimeout
 }
 
-// startRun starts graceful.Run in a goroutine, waits for the HTTP layer to be
-// ready, and registers cancel via t.Cleanup so the goroutine is not leaked on
-// test failure. Returns the bound address, a cancel func, and a result channel.
+// startRun launches Run in a goroutine and waits for HTTP readiness.
+// cancel is registered with t.Cleanup to prevent goroutine leaks on failure.
 func startRun(t *testing.T, handler http.Handler, cfg *graceful.Config) (addr string, cancel context.CancelFunc, done <-chan error) {
 	t.Helper()
 	srv, addr := newTestServer(t, handler)
@@ -91,8 +81,6 @@ func startRun(t *testing.T, handler http.Handler, cfg *graceful.Config) (addr st
 	return addr, cancel, ch
 }
 
-// awaitShutdown blocks until Run's goroutine finishes and returns its error.
-// It calls t.Fatal if the server has not stopped within testShutdownTimeout.
 func awaitShutdown(t *testing.T, done <-chan error) error {
 	t.Helper()
 	select {
@@ -103,8 +91,6 @@ func awaitShutdown(t *testing.T, done <-chan error) error {
 		return nil
 	}
 }
-
-// ── tests ────────────────────────────────────────────────────────────────────
 
 func TestRun(t *testing.T) {
 	tests := []struct {
@@ -125,9 +111,6 @@ func TestRun(t *testing.T) {
 	}
 }
 
-// TestRunServerError verifies that Run propagates an error returned by
-// ListenAndServe. controllableServer is used so the test is independent of
-// OS-level port availability.
 func TestRunServerError(t *testing.T) {
 	want := errors.New("listen tcp: bind: address already in use")
 	srv := &controllableServer{listenFunc: func() error { return want }}
@@ -156,9 +139,6 @@ func TestRunCleanup(t *testing.T) {
 	}
 }
 
-// TestRunCleanupPanic verifies that when one cleanup panics, subsequent
-// cleanups still run before the panic is re-raised.
-// Uses a chan any instead of chan error because Run panics rather than returns.
 func TestRunCleanupPanic(t *testing.T) {
 	srv, addr := newTestServer(t, http.DefaultServeMux)
 	ctx, cancel := context.WithCancel(context.Background())
