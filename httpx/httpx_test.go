@@ -21,7 +21,20 @@ func freePort(t *testing.T) string {
 	return addr
 }
 
-func TestRunWithContext_GracefulShutdown(t *testing.T) {
+func waitForServer(addr string, timeout time.Duration) error {
+	deadline := time.Now().Add(timeout)
+	for time.Now().Before(deadline) {
+		conn, err := net.DialTimeout("tcp", addr, 100*time.Millisecond)
+		if err == nil {
+			conn.Close()
+			return nil
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
+	return context.DeadlineExceeded
+}
+
+func TestRunGracefulShutdown(t *testing.T) {
 	addr := freePort(t)
 	srv := &http.Server{Addr: addr, Handler: http.DefaultServeMux}
 
@@ -29,15 +42,13 @@ func TestRunWithContext_GracefulShutdown(t *testing.T) {
 
 	done := make(chan error, 1)
 	go func() {
-		done <- httpx.RunWithContext(ctx, srv)
+		done <- httpx.Run(ctx, srv, 5*time.Second)
 	}()
 
-	// Wait for server to start accepting connections.
 	if err := waitForServer(addr, 2*time.Second); err != nil {
 		t.Fatal("server did not start in time:", err)
 	}
 
-	// Trigger shutdown.
 	cancel()
 
 	select {
@@ -50,10 +61,9 @@ func TestRunWithContext_GracefulShutdown(t *testing.T) {
 	}
 }
 
-func TestRunWithContext_ServerError(t *testing.T) {
+func TestRunServerError(t *testing.T) {
 	addr := freePort(t)
 
-	// Occupy the port so ListenAndServe fails.
 	ln, err := net.Listen("tcp", addr)
 	if err != nil {
 		t.Fatal(err)
@@ -61,42 +71,14 @@ func TestRunWithContext_ServerError(t *testing.T) {
 	defer ln.Close()
 
 	srv := &http.Server{Addr: addr, Handler: http.DefaultServeMux}
-	ctx := context.Background()
 
-	err = httpx.RunWithContext(ctx, srv)
+	err = httpx.Run(context.Background(), srv, 5*time.Second)
 	if err == nil {
 		t.Fatal("expected error when port is already in use, got nil")
 	}
 }
 
-func TestRunWithContext_WithShutdownTimeout(t *testing.T) {
-	addr := freePort(t)
-	srv := &http.Server{Addr: addr, Handler: http.DefaultServeMux}
-
-	ctx, cancel := context.WithCancel(context.Background())
-
-	done := make(chan error, 1)
-	go func() {
-		done <- httpx.RunWithContext(ctx, srv, httpx.WithShutdownTimeout(3*time.Second))
-	}()
-
-	if err := waitForServer(addr, 2*time.Second); err != nil {
-		t.Fatal("server did not start in time:", err)
-	}
-
-	cancel()
-
-	select {
-	case err := <-done:
-		if err != nil {
-			t.Fatalf("expected nil error, got: %v", err)
-		}
-	case <-time.After(5 * time.Second):
-		t.Fatal("server did not shut down in time")
-	}
-}
-
-func TestRunWithContext_HandlesRequests(t *testing.T) {
+func TestRunHandlesRequests(t *testing.T) {
 	addr := freePort(t)
 
 	mux := http.NewServeMux()
@@ -110,7 +92,7 @@ func TestRunWithContext_HandlesRequests(t *testing.T) {
 
 	done := make(chan error, 1)
 	go func() {
-		done <- httpx.RunWithContext(ctx, srv)
+		done <- httpx.Run(ctx, srv, 5*time.Second)
 	}()
 
 	if err := waitForServer(addr, 2*time.Second); err != nil {
@@ -137,18 +119,4 @@ func TestRunWithContext_HandlesRequests(t *testing.T) {
 	case <-time.After(5 * time.Second):
 		t.Fatal("server did not shut down in time")
 	}
-}
-
-// waitForServer polls until the address is reachable or timeout expires.
-func waitForServer(addr string, timeout time.Duration) error {
-	deadline := time.Now().Add(timeout)
-	for time.Now().Before(deadline) {
-		conn, err := net.DialTimeout("tcp", addr, 100*time.Millisecond)
-		if err == nil {
-			conn.Close()
-			return nil
-		}
-		time.Sleep(50 * time.Millisecond)
-	}
-	return context.DeadlineExceeded
 }
