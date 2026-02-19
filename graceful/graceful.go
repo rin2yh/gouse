@@ -34,6 +34,9 @@ const defaultShutdownTimeout = 5 * time.Second
 
 // Server is the interface required by Run.
 // *http.Server satisfies this interface.
+//
+// ListenAndServe must return http.ErrServerClosed when Shutdown is called;
+// this is the standard behaviour of *http.Server.
 type Server interface {
 	ListenAndServe() error
 	Shutdown(ctx context.Context) error

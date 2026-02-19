@@ -10,6 +10,11 @@ import (
 	"github.com/YuukiHayashi0510/gouse/graceful"
 )
 
+const (
+	testShutdownTimeout = 5 * time.Second
+	testStartTimeout    = 2 * time.Second
+)
+
 func freePort(t *testing.T) string {
 	t.Helper()
 	ln, err := net.Listen("tcp", "127.0.0.1:0")
@@ -58,7 +63,7 @@ func TestRun(t *testing.T) {
 	}{
 		{
 			name: "with config",
-			cfg:  &graceful.Config{ShutdownTimeout: 5 * time.Second},
+			cfg:  &graceful.Config{ShutdownTimeout: testShutdownTimeout},
 		},
 		{
 			name: "nil config uses default",
@@ -89,7 +94,7 @@ func TestRun(t *testing.T) {
 				if err != nil {
 					t.Fatalf("expected nil error, got: %v", err)
 				}
-			case <-time.After(5 * time.Second):
+			case <-time.After(testShutdownTimeout):
 				t.Fatal("server did not shut down in time")
 			}
 		})
@@ -123,7 +128,7 @@ func TestRunCleanup(t *testing.T) {
 	done := make(chan error, 1)
 	go func() {
 		done <- graceful.Run(ctx, srv, &graceful.Config{
-			ShutdownTimeout: 5 * time.Second,
+			ShutdownTimeout: testShutdownTimeout,
 			Cleanups: []func(){
 				func() { called = append(called, "first") },
 				func() { called = append(called, "second") },
@@ -142,7 +147,7 @@ func TestRunCleanup(t *testing.T) {
 		if err != nil {
 			t.Fatalf("expected nil error, got: %v", err)
 		}
-	case <-time.After(5 * time.Second):
+	case <-time.After(testShutdownTimeout):
 		t.Fatal("server did not shut down in time")
 	}
 
@@ -189,7 +194,7 @@ func TestRunHandlesRequests(t *testing.T) {
 		if err != nil {
 			t.Fatalf("expected nil error on shutdown, got: %v", err)
 		}
-	case <-time.After(5 * time.Second):
+	case <-time.After(testShutdownTimeout):
 		t.Fatal("server did not shut down in time")
 	}
 }
