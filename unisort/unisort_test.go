@@ -4,7 +4,7 @@ import (
 	"reflect"
 	"testing"
 
-	"github.com/YuukiHayashi0510/gouse/unisort"
+	"github.com/rin2yh/gouse/unisort"
 )
 
 func TestUniqueSortNaturalInts(t *testing.T) {

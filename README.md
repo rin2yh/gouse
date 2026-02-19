@@ -1,6 +1,6 @@
 # gouse
 
-[![test](https://github.com/YuukiHayashi0510/gouse/actions/workflows/test.yml/badge.svg)](https://github.com/YuukiHayashi0510/gouse/actions/workflows/test.yml)
+[![test](https://github.com/rin2yh/gouse/actions/workflows/test.yml/badge.svg)](https://github.com/rin2yh/gouse/actions/workflows/test.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-brightgreen.svg)](https://opensource.org/licenses/MIT)
 
 Collection of Go utility functions
@@ -8,7 +8,7 @@ Collection of Go utility functions
 ## Install
 
 ```sh
-go get github.com/YuukiHayashi0510/gouse
+go get github.com/rin2yh/gouse
 ```
 
 ## Packages
@@ -16,7 +16,7 @@ go get github.com/YuukiHayashi0510/gouse
 ### `empty` — Empty value checks
 
 ```sh
-go get github.com/YuukiHayashi0510/gouse/empty
+go get github.com/rin2yh/gouse/empty
 ```
 
 | Function | Description |
@@ -33,7 +33,7 @@ go get github.com/YuukiHayashi0510/gouse/empty
 - nil ポインタ・インターフェース
 
 ```go
-import "github.com/YuukiHayashi0510/gouse/empty"
+import "github.com/rin2yh/gouse/empty"
 
 empty.Is(0)        // true
 empty.Is("")       // true
@@ -49,13 +49,13 @@ empty.All(0, "", false)    // true  (すべて空)
 ### `graceful` — HTTP サーバーのグレースフルシャットダウン
 
 ```sh
-go get github.com/YuukiHayashi0510/gouse/graceful
+go get github.com/rin2yh/gouse/graceful
 ```
 
 `SIGINT` / `SIGTERM` を受け取る、またはコンテキストがキャンセルされると、サーバーを安全にシャットダウンします。
 
 ```go
-import "github.com/YuukiHayashi0510/gouse/graceful"
+import "github.com/rin2yh/gouse/graceful"
 
 // シンプルな使い方
 srv := &http.Server{Addr: ":8080", Handler: mux}
@@ -84,7 +84,7 @@ if err := graceful.Run(ctx, srv, &graceful.Config{
 ### `unisort` — ユニーク整数のソート
 
 ```sh
-go get github.com/YuukiHayashi0510/gouse/unisort
+go get github.com/rin2yh/gouse/unisort
 ```
 
 | Function | Description |
@@ -92,7 +92,7 @@ go get github.com/YuukiHayashi0510/gouse/unisort
 | `UniqueSortNaturalInts(arr []int) []int` | 整数スライスをソートして重複を除去する |
 
 ```go
-import "github.com/YuukiHayashi0510/gouse/unisort"
+import "github.com/rin2yh/gouse/unisort"
 
 unisort.UniqueSortNaturalInts([]int{3, 1, 2, 1, 3}) // [1, 2, 3]
 ```

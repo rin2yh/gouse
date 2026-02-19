@@ -6,7 +6,7 @@ import (
 	"net/http"
 	"testing"
 
-	"github.com/YuukiHayashi0510/gouse/graceful"
+	"github.com/rin2yh/gouse/graceful"
 )
 
 // listenerServer wraps *http.Server with a pre-bound listener to avoid the

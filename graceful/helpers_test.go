@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/YuukiHayashi0510/gouse/graceful"
+	"github.com/rin2yh/gouse/graceful"
 )
 
 const (
