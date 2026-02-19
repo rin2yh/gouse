@@ -203,22 +203,33 @@ func TestRunHandlesRequests(t *testing.T) {
 
 func TestRunShutdownError(t *testing.T) {
 	const shortTimeout = 50 * time.Millisecond
+
+	handlerStarted := make(chan struct{})
 	mux := http.NewServeMux()
 	mux.HandleFunc("/hang", func(w http.ResponseWriter, r *http.Request) {
+		close(handlerStarted) // signal before blocking so cancel fires while in-flight
 		time.Sleep(2 * shortTimeout)
 		w.WriteHeader(http.StatusOK)
 	})
 
 	addr, cancel, done := startRun(t, mux, &graceful.Config{ShutdownTimeout: shortTimeout})
 
-	// Launch a request that will still be in-flight when shutdown begins.
+	// Client timeout prevents this goroutine hanging if the server never responds.
+	client := &http.Client{Timeout: testShutdownTimeout}
 	go func() {
-		resp, err := http.Get("http://" + addr + "/hang")
+		resp, err := client.Get("http://" + addr + "/hang")
 		if err == nil && resp != nil {
 			resp.Body.Close()
 		}
 	}()
-	time.Sleep(10 * time.Millisecond) // let the request reach the handler
+
+	// Wait until the handler is executing before triggering shutdown so the
+	// request is guaranteed to be in-flight (no timing dependency).
+	select {
+	case <-handlerStarted:
+	case <-time.After(testStartTimeout):
+		t.Fatal("handler did not start in time")
+	}
 
 	cancel()
 	if err := awaitShutdown(t, done); err == nil {
