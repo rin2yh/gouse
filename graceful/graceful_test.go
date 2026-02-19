@@ -78,6 +78,41 @@ func TestRunServerError(t *testing.T) {
 	}
 }
 
+func TestRunCleanup(t *testing.T) {
+	addr := freePort(t)
+	srv := &http.Server{Addr: addr, Handler: http.DefaultServeMux}
+
+	ctx, cancel := context.WithCancel(context.Background())
+
+	var called []string
+	done := make(chan error, 1)
+	go func() {
+		done <- graceful.Run(ctx, srv, 5*time.Second,
+			func() { called = append(called, "first") },
+			func() { called = append(called, "second") },
+		)
+	}()
+
+	if err := waitForServer(addr, 2*time.Second); err != nil {
+		t.Fatal("server did not start in time:", err)
+	}
+
+	cancel()
+
+	select {
+	case err := <-done:
+		if err != nil {
+			t.Fatalf("expected nil error, got: %v", err)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("server did not shut down in time")
+	}
+
+	if len(called) != 2 || called[0] != "first" || called[1] != "second" {
+		t.Fatalf("expected cleanups to run in order, got: %v", called)
+	}
+}
+
 func TestRunHandlesRequests(t *testing.T) {
 	addr := freePort(t)
 
