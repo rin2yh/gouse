@@ -1,13 +1,19 @@
 // Package graceful provides HTTP server startup and graceful shutdown.
 //
-// Basic usage with default timeout (5 seconds):
+// Signal-based shutdown (typical production usage):
+//
+//	ctx, stop := graceful.NewContext(context.Background())
+//	defer stop()
 //
 //	srv := &http.Server{Addr: ":8080", Handler: mux}
 //	if err := graceful.Run(ctx, srv, nil); err != nil {
 //	    log.Fatal(err)
 //	}
 //
-// With custom timeout and cleanup:
+// With custom timeout and cleanup (e.g. closing DB after shutdown):
+//
+//	ctx, stop := graceful.NewContext(context.Background())
+//	defer stop()
 //
 //	graceful.Run(ctx, srv, &graceful.Config{
 //	    ShutdownTimeout: 10 * time.Second,
@@ -19,6 +25,9 @@ import (
 	"context"
 	"errors"
 	"net/http"
+	"os"
+	"os/signal"
+	"syscall"
 	"time"
 )
 
@@ -42,6 +51,21 @@ type Config struct {
 	// Cleanups are functions called in order after the server shuts down
 	// (e.g. closing database connections, flushing caches).
 	Cleanups []func()
+}
+
+// NewContext returns a context that is cancelled when SIGINT or SIGTERM is received.
+// The returned stop function must be called to release resources.
+//
+// Typical usage:
+//
+//	ctx, stop := graceful.NewContext(context.Background())
+//	defer stop()
+//	graceful.Run(ctx, srv, nil)
+func NewContext(parent context.Context, sigs ...os.Signal) (context.Context, context.CancelFunc) {
+	if len(sigs) == 0 {
+		sigs = []os.Signal{syscall.SIGINT, syscall.SIGTERM}
+	}
+	return signal.NotifyContext(parent, sigs...)
 }
 
 // Run starts srv and blocks until ctx is cancelled or the server fails.
