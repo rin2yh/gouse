@@ -46,16 +46,16 @@ empty.All(0, "", false)    // true  (すべて空)
 
 ---
 
-### `graceful` — HTTP サーバーのグレースフルシャットダウン
+### `net/graceful` — HTTP サーバーのグレースフルシャットダウン
 
 ```sh
-go get github.com/rin2yh/gouse/graceful
+go get github.com/rin2yh/gouse/net/graceful
 ```
 
 `SIGINT` / `SIGTERM` を受け取る、またはコンテキストがキャンセルされると、サーバーを安全にシャットダウンします。
 
 ```go
-import "github.com/rin2yh/gouse/graceful"
+import "github.com/rin2yh/gouse/net/graceful"
 
 // シンプルな使い方
 srv := &http.Server{Addr: ":8080", Handler: mux}
