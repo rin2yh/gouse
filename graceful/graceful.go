@@ -58,13 +58,12 @@ func Run(parent context.Context, srv Server, cfg *Config) error {
 	ctx, stop := signal.NotifyContext(parent, syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
 
+	if cfg == nil {
+		cfg = &Config{}
+	}
 	timeout := defaultShutdownTimeout
-	var cleanups []func()
-	if cfg != nil {
-		if cfg.ShutdownTimeout > 0 {
-			timeout = cfg.ShutdownTimeout
-		}
-		cleanups = cfg.Cleanups
+	if cfg.ShutdownTimeout > 0 {
+		timeout = cfg.ShutdownTimeout
 	}
 
 	serverErr := make(chan error, 1)
@@ -88,7 +87,7 @@ func Run(parent context.Context, srv Server, cfg *Config) error {
 		return err
 	}
 
-	for _, cleanup := range cleanups {
+	for _, cleanup := range cfg.Cleanups {
 		cleanup()
 	}
 
