@@ -46,7 +46,9 @@ func BenchmarkShutdown(b *testing.B) {
 				done := make(chan error, 1)
 				go func() { done <- graceful.Run(ctx, srv, cfg) }()
 				cancel()
-				<-done
+				if err := <-done; err != nil {
+					b.Fatal(err)
+				}
 			}
 		})
 	}
