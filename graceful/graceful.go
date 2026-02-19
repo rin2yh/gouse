@@ -45,18 +45,17 @@ const defaultShutdownTimeout = 5 * time.Second
 // Server is the interface required by Run.
 // *http.Server satisfies this interface.
 //
-// ListenAndServe must return http.ErrServerClosed when Shutdown is called;
-// this is the standard behaviour of *http.Server.
+// ListenAndServe must return http.ErrServerClosed when Shutdown is called.
 type Server interface {
 	ListenAndServe() error
 	Shutdown(ctx context.Context) error
 }
 
-// Config holds optional configuration for Run.
-// The zero value is valid; ShutdownTimeout defaults to 5 seconds.
+// Config holds optional configuration for Run. The zero value is valid.
 type Config struct {
-	// ShutdownTimeout is the maximum duration to wait for in-flight requests
-	// to complete before forcibly closing connections.
+	// ShutdownTimeout is the maximum duration Shutdown waits for in-flight
+	// requests to complete. If exceeded, Shutdown returns an error; active
+	// connections are not forcibly closed.
 	// Defaults to 5 seconds if zero.
 	ShutdownTimeout time.Duration
 
