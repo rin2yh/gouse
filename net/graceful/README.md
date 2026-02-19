@@ -39,7 +39,7 @@ if err := graceful.Run(ctx, srv, &graceful.Config{
 
 ## Benchmarks
 
-Measured with `go test -bench=. -benchmem -count=3` on the following environment (library minimum supported version is Go 1.21, per `go.mod`):
+Measured with `go test -run=^$ -bench=. -benchmem -count=3` on the following environment (library minimum supported version is Go 1.21, per `go.mod`):
 
 - Go 1.24.7 linux/amd64 (benchmark runtime; library supports Go 1.21+)
 - CPU: Intel Xeon Platinum 8581C @ 2.10GHz
@@ -57,5 +57,5 @@ Memory footprint is constant regardless of the number of cleanup functions, sinc
 To run on your own machine:
 
 ```sh
-go test -bench=. -benchmem ./net/graceful/
+go test -run=^$ -bench=. -benchmem ./net/graceful/
 ```
