@@ -80,16 +80,23 @@ func Run(parent context.Context, srv Server, cfg *Config) error {
 	case <-ctx.Done():
 	}
 
-	shutdownCtx, cancel := context.WithTimeout(context.Background(), timeout)
+	// context.WithoutCancel preserves values (trace IDs, loggers) from ctx
+	// while preventing the already-cancelled ctx from short-circuiting shutdown.
+	shutdownCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), timeout)
 	defer cancel()
 
-	if err := srv.Shutdown(shutdownCtx); err != nil {
-		return err
-	}
+	shutdownErr := srv.Shutdown(shutdownCtx)
+
+	// Drain serverErr: a real ListenAndServe error may have raced with ctx.Done
+	// and been lost when the select chose the ctx.Done branch.
+	srvErr := <-serverErr
 
 	for _, cleanup := range cfg.Cleanups {
 		cleanup()
 	}
 
-	return nil
+	if srvErr != nil {
+		return srvErr
+	}
+	return shutdownErr
 }
