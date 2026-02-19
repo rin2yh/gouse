@@ -17,13 +17,13 @@ const (
 )
 
 // errServerStartTimeout is returned by waitForServer when the server does not
-// respond within the given timeout. Using a dedicated error avoids the
-// misleading implication that a context deadline was exceeded.
+// respond to HTTP within the given timeout.
 var errServerStartTimeout = errors.New("server failed to start within timeout")
 
+// ── test server helpers ──────────────────────────────────────────────────────
+
 // listenerServer wraps *http.Server to use a pre-bound listener,
-// eliminating the TOCTOU race where another process grabs the port between
-// freePort returning and ListenAndServe binding.
+// eliminating the TOCTOU race between freePort and ListenAndServe.
 type listenerServer struct {
 	srv *http.Server
 	ln  net.Listener
@@ -32,23 +32,7 @@ type listenerServer struct {
 func (s *listenerServer) ListenAndServe() error              { return s.srv.Serve(s.ln) }
 func (s *listenerServer) Shutdown(ctx context.Context) error { return s.srv.Shutdown(ctx) }
 
-// newTestServer binds a listener on an OS-assigned port and returns a Server
-// that calls Serve(ln), plus the bound address.
-// The listener is closed via t.Cleanup when the test ends.
-func newTestServer(t *testing.T, handler http.Handler) (graceful.Server, string) {
-	t.Helper()
-	ln, err := net.Listen("tcp", "127.0.0.1:0")
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { ln.Close() })
-	return &listenerServer{
-		srv: &http.Server{Handler: handler},
-		ln:  ln,
-	}, ln.Addr().String()
-}
-
-// controllableServer lets tests inject custom ListenAndServe and Shutdown
+// controllableServer lets tests inject arbitrary ListenAndServe / Shutdown
 // behaviour without relying on OS-level port allocation.
 type controllableServer struct {
 	listenFunc   func() error
@@ -63,8 +47,20 @@ func (s *controllableServer) Shutdown(ctx context.Context) error {
 	return nil
 }
 
-// waitForServer polls until the server responds to an HTTP request,
-// confirming the HTTP layer is ready (not just TCP).
+// newTestServer binds a listener on an OS-assigned port and returns a Server
+// that delegates to Serve(ln), plus the bound address.
+// The listener is closed via t.Cleanup when the test ends.
+func newTestServer(t *testing.T, handler http.Handler) (graceful.Server, string) {
+	t.Helper()
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { ln.Close() })
+	return &listenerServer{srv: &http.Server{Handler: handler}, ln: ln}, ln.Addr().String()
+}
+
+// waitForServer polls addr until the HTTP layer responds or timeout expires.
 func waitForServer(addr string, timeout time.Duration) error {
 	client := &http.Client{Timeout: 100 * time.Millisecond}
 	deadline := time.Now().Add(timeout)
@@ -79,57 +75,62 @@ func waitForServer(addr string, timeout time.Duration) error {
 	return errServerStartTimeout
 }
 
+// startRun starts graceful.Run in a goroutine, waits for the HTTP layer to be
+// ready, and registers cancel via t.Cleanup so the goroutine is not leaked on
+// test failure. Returns the bound address, a cancel func, and a result channel.
+func startRun(t *testing.T, handler http.Handler, cfg *graceful.Config) (addr string, cancel context.CancelFunc, done <-chan error) {
+	t.Helper()
+	srv, addr := newTestServer(t, handler)
+	ctx, cancel := context.WithCancel(context.Background())
+	t.Cleanup(cancel)
+	ch := make(chan error, 1)
+	go func() { ch <- graceful.Run(ctx, srv, cfg) }()
+	if err := waitForServer(addr, testStartTimeout); err != nil {
+		t.Fatal("server did not start in time:", err)
+	}
+	return addr, cancel, ch
+}
+
+// awaitShutdown blocks until Run's goroutine finishes and returns its error.
+// It calls t.Fatal if the server has not stopped within testShutdownTimeout.
+func awaitShutdown(t *testing.T, done <-chan error) error {
+	t.Helper()
+	select {
+	case err := <-done:
+		return err
+	case <-time.After(testShutdownTimeout):
+		t.Fatal("server did not shut down in time")
+		return nil
+	}
+}
+
+// ── tests ────────────────────────────────────────────────────────────────────
+
 func TestRun(t *testing.T) {
 	tests := []struct {
 		name string
 		cfg  *graceful.Config
 	}{
-		{
-			name: "with config",
-			cfg:  &graceful.Config{ShutdownTimeout: testShutdownTimeout},
-		},
-		{
-			name: "nil config uses default",
-			cfg:  nil,
-		},
+		{"with config", &graceful.Config{ShutdownTimeout: testShutdownTimeout}},
+		{"nil config uses default", nil},
 	}
-
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			srv, addr := newTestServer(t, http.DefaultServeMux)
-			ctx, cancel := context.WithCancel(context.Background())
-
-			done := make(chan error, 1)
-			go func() {
-				done <- graceful.Run(ctx, srv, tt.cfg)
-			}()
-
-			if err := waitForServer(addr, testStartTimeout); err != nil {
-				t.Fatal("server did not start in time:", err)
-			}
-
+			_, cancel, done := startRun(t, http.DefaultServeMux, tt.cfg)
 			cancel()
-
-			select {
-			case err := <-done:
-				if err != nil {
-					t.Fatalf("expected nil error, got: %v", err)
-				}
-			case <-time.After(testShutdownTimeout):
-				t.Fatal("server did not shut down in time")
+			if err := awaitShutdown(t, done); err != nil {
+				t.Fatalf("expected nil error, got: %v", err)
 			}
 		})
 	}
 }
 
 // TestRunServerError verifies that Run propagates an error returned by
-// ListenAndServe (e.g. address already in use). controllableServer is used
-// instead of *http.Server so the test is independent of OS port availability.
+// ListenAndServe. controllableServer is used so the test is independent of
+// OS-level port availability.
 func TestRunServerError(t *testing.T) {
 	want := errors.New("listen tcp: bind: address already in use")
-	srv := &controllableServer{
-		listenFunc: func() error { return want },
-	}
+	srv := &controllableServer{listenFunc: func() error { return want }}
 
 	got := graceful.Run(context.Background(), srv, nil)
 	if !errors.Is(got, want) {
@@ -138,36 +139,18 @@ func TestRunServerError(t *testing.T) {
 }
 
 func TestRunCleanup(t *testing.T) {
-	srv, addr := newTestServer(t, http.DefaultServeMux)
-	ctx, cancel := context.WithCancel(context.Background())
-
 	var called []string
-	done := make(chan error, 1)
-	go func() {
-		done <- graceful.Run(ctx, srv, &graceful.Config{
-			ShutdownTimeout: testShutdownTimeout,
-			Cleanups: []func(){
-				func() { called = append(called, "first") },
-				func() { called = append(called, "second") },
-			},
-		})
-	}()
-
-	if err := waitForServer(addr, testStartTimeout); err != nil {
-		t.Fatal("server did not start in time:", err)
-	}
-
+	_, cancel, done := startRun(t, http.DefaultServeMux, &graceful.Config{
+		ShutdownTimeout: testShutdownTimeout,
+		Cleanups: []func(){
+			func() { called = append(called, "first") },
+			func() { called = append(called, "second") },
+		},
+	})
 	cancel()
-
-	select {
-	case err := <-done:
-		if err != nil {
-			t.Fatalf("expected nil error, got: %v", err)
-		}
-	case <-time.After(testShutdownTimeout):
-		t.Fatal("server did not shut down in time")
+	if err := awaitShutdown(t, done); err != nil {
+		t.Fatalf("expected nil error, got: %v", err)
 	}
-
 	if len(called) != 2 || called[0] != "first" || called[1] != "second" {
 		t.Fatalf("expected cleanups to run in order, got: %v", called)
 	}
@@ -175,9 +158,11 @@ func TestRunCleanup(t *testing.T) {
 
 // TestRunCleanupPanic verifies that when one cleanup panics, subsequent
 // cleanups still run before the panic is re-raised.
+// Uses a chan any instead of chan error because Run panics rather than returns.
 func TestRunCleanupPanic(t *testing.T) {
 	srv, addr := newTestServer(t, http.DefaultServeMux)
 	ctx, cancel := context.WithCancel(context.Background())
+	t.Cleanup(cancel)
 
 	secondRan := false
 	done := make(chan any, 1)
@@ -195,7 +180,6 @@ func TestRunCleanupPanic(t *testing.T) {
 	if err := waitForServer(addr, testStartTimeout); err != nil {
 		t.Fatal("server did not start in time:", err)
 	}
-
 	cancel()
 
 	select {
@@ -209,7 +193,6 @@ func TestRunCleanupPanic(t *testing.T) {
 	case <-time.After(testShutdownTimeout):
 		t.Fatal("Run did not return in time")
 	}
-
 	if !secondRan {
 		t.Fatal("second cleanup did not run after first cleanup panicked")
 	}
@@ -221,89 +204,44 @@ func TestRunHandlesRequests(t *testing.T) {
 		w.WriteHeader(http.StatusOK)
 	})
 
-	srv, addr := newTestServer(t, mux)
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-
-	done := make(chan error, 1)
-	go func() {
-		done <- graceful.Run(ctx, srv, nil)
-	}()
-
-	if err := waitForServer(addr, testStartTimeout); err != nil {
-		t.Fatal("server did not start in time:", err)
-	}
+	addr, cancel, done := startRun(t, mux, nil)
 
 	resp, err := http.Get("http://" + addr + "/ping")
 	if err != nil {
 		t.Fatal("request failed:", err)
 	}
 	resp.Body.Close()
-
 	if resp.StatusCode != http.StatusOK {
 		t.Fatalf("expected 200, got %d", resp.StatusCode)
 	}
 
 	cancel()
-
-	select {
-	case err := <-done:
-		if err != nil {
-			t.Fatalf("expected nil error on shutdown, got: %v", err)
-		}
-	case <-time.After(testShutdownTimeout):
-		t.Fatal("server did not shut down in time")
+	if err := awaitShutdown(t, done); err != nil {
+		t.Fatalf("expected nil error on shutdown, got: %v", err)
 	}
 }
 
 func TestRunShutdownError(t *testing.T) {
+	const shortTimeout = 50 * time.Millisecond
 	mux := http.NewServeMux()
-
-	// Use a very short shutdown timeout so that an in-flight request
-	// will cause http.Server.Shutdown to time out and return an error.
-	shortShutdownTimeout := 50 * time.Millisecond
-
 	mux.HandleFunc("/hang", func(w http.ResponseWriter, r *http.Request) {
-		// Sleep longer than the shutdown timeout to force a timeout error.
-		time.Sleep(2 * shortShutdownTimeout)
+		time.Sleep(2 * shortTimeout)
 		w.WriteHeader(http.StatusOK)
 	})
 
-	srv, addr := newTestServer(t, mux)
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
+	addr, cancel, done := startRun(t, mux, &graceful.Config{ShutdownTimeout: shortTimeout})
 
-	done := make(chan error, 1)
-	go func() {
-		done <- graceful.Run(ctx, srv, &graceful.Config{
-			ShutdownTimeout: shortShutdownTimeout,
-		})
-	}()
-
-	if err := waitForServer(addr, testStartTimeout); err != nil {
-		t.Fatal("server did not start in time:", err)
-	}
-
-	// Start a hanging request that will still be running when shutdown begins.
+	// Launch a request that will still be in-flight when shutdown begins.
 	go func() {
 		resp, err := http.Get("http://" + addr + "/hang")
 		if err == nil && resp != nil {
 			resp.Body.Close()
 		}
 	}()
+	time.Sleep(10 * time.Millisecond) // let the request reach the handler
 
-	// Give the request a moment to reach the handler.
-	time.Sleep(10 * time.Millisecond)
-
-	// Trigger shutdown.
 	cancel()
-
-	select {
-	case err := <-done:
-		if err == nil {
-			t.Fatal("expected non-nil error when shutdown fails, got nil")
-		}
-	case <-time.After(testShutdownTimeout):
-		t.Fatal("server did not shut down in time")
+	if err := awaitShutdown(t, done); err == nil {
+		t.Fatal("expected non-nil error when shutdown times out, got nil")
 	}
 }
