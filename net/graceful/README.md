@@ -39,9 +39,9 @@ if err := graceful.Run(ctx, srv, &graceful.Config{
 
 ## Benchmarks
 
-Measured with `go test -bench=. -benchmem -count=3` on the following environment:
+Measured with `go test -bench=. -benchmem -count=3` on the following environment (library minimum supported version is Go 1.21, per `go.mod`):
 
-- Go 1.24.7 linux/amd64
+- Go 1.24.7 linux/amd64 (benchmark runtime; library supports Go 1.21+)
 - CPU: Intel Xeon Platinum 8581C @ 2.10GHz
 
 | Benchmark | ns/op | B/op | allocs/op |
