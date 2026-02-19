@@ -1,6 +1,8 @@
 // Package graceful provides HTTP server startup and graceful shutdown.
 //
-// Typical usage (signal-based shutdown):
+// Run responds to both SIGINT/SIGTERM and programmatic context cancellation.
+//
+// Signal-based shutdown (typical production use):
 //
 //	ctx := context.Background()
 //	srv := &http.Server{Addr: ":8080", Handler: mux}
@@ -8,23 +10,20 @@
 //	    log.Fatal(err)
 //	}
 //
-// With custom timeout, cleanup, and programmatic cancellation via parent context:
+// Programmatic cancellation (e.g. managed lifecycle or tests):
 //
-//	parent, cancel := context.WithCancel(context.Background())
-//	defer cancel()
+//	ctx, cancel := context.WithCancel(context.Background())
+//	go func() {
+//	    if err := graceful.Run(ctx, srv, nil); err != nil {
+//	        log.Print(err)
+//	    }
+//	}()
+//	// ... when ready to stop:
+//	cancel()
 //
-//	srv := &http.Server{Addr: ":8080", Handler: mux}
+// With custom shutdown timeout and post-shutdown cleanups:
 //
-//	// In some other goroutine or callback, call cancel() when you want to
-//	// trigger a graceful shutdown without relying solely on OS signals.
-//	//
-//	//	go func() {
-//	//	    if err := waitForCondition(); err != nil {
-//	//	        cancel()
-//	//	    }
-//	//	}()
-//
-//	if err := graceful.Run(parent, srv, &graceful.Config{
+//	if err := graceful.Run(ctx, srv, &graceful.Config{
 //	    ShutdownTimeout: 10 * time.Second,
 //	    Cleanups:        []func(){db.Close},
 //	}); err != nil {
@@ -63,6 +62,8 @@ type Config struct {
 
 	// Cleanups are functions called in order after the server shuts down
 	// (e.g. closing database connections, flushing caches).
+	// If a cleanup panics, all remaining cleanups still run before the
+	// panic is re-raised.
 	Cleanups []func()
 }
 
@@ -108,12 +109,30 @@ func Run(parent context.Context, srv Server, cfg *Config) error {
 	// and been lost when the select chose the ctx.Done branch.
 	srvErr := <-serverErr
 
-	for _, cleanup := range cfg.Cleanups {
-		cleanup()
-	}
+	runCleanups(cfg.Cleanups)
 
 	if srvErr != nil {
 		return srvErr
 	}
 	return shutdownErr
+}
+
+// runCleanups calls each cleanup in order. If any cleanup panics, the
+// remaining cleanups still run; the first panic value is re-raised after
+// all cleanups have completed.
+func runCleanups(cleanups []func()) {
+	var panicVal any
+	for _, cleanup := range cleanups {
+		func() {
+			defer func() {
+				if r := recover(); r != nil && panicVal == nil {
+					panicVal = r
+				}
+			}()
+			cleanup()
+		}()
+	}
+	if panicVal != nil {
+		panic(panicVal)
+	}
 }
