@@ -4,7 +4,6 @@ import (
 	"context"
 	"net"
 	"net/http"
-	"syscall"
 	"testing"
 	"time"
 
@@ -36,40 +35,19 @@ func waitForServer(addr string, timeout time.Duration) error {
 }
 
 func TestNewContext(t *testing.T) {
-	tests := []struct {
-		name string
-		sigs []syscall.Signal
-	}{
-		{name: "default signals (SIGINT/SIGTERM)", sigs: nil},
-		{name: "custom signal (SIGTERM)", sigs: []syscall.Signal{syscall.SIGTERM}},
+	ctx, stop := graceful.NewContext(context.Background())
+	defer stop()
+
+	if ctx.Err() != nil {
+		t.Fatal("expected context to be active")
 	}
 
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			var ctx context.Context
-			var stop context.CancelFunc
-			if tt.sigs == nil {
-				ctx, stop = graceful.NewContext(context.Background())
-			} else {
-				ctx, stop = graceful.NewContext(context.Background(), tt.sigs[0])
-			}
-			defer stop()
+	stop()
 
-			if ctx == nil {
-				t.Fatal("expected non-nil context")
-			}
-			if ctx.Err() != nil {
-				t.Fatal("expected context to be active")
-			}
-
-			stop()
-
-			select {
-			case <-ctx.Done():
-			case <-time.After(time.Second):
-				t.Fatal("context was not cancelled after stop()")
-			}
-		})
+	select {
+	case <-ctx.Done():
+	case <-time.After(time.Second):
+		t.Fatal("context was not cancelled after stop()")
 	}
 }
 

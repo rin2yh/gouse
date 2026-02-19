@@ -25,7 +25,6 @@ import (
 	"context"
 	"errors"
 	"net/http"
-	"os"
 	"os/signal"
 	"syscall"
 	"time"
@@ -61,11 +60,8 @@ type Config struct {
 //	ctx, stop := graceful.NewContext(context.Background())
 //	defer stop()
 //	graceful.Run(ctx, srv, nil)
-func NewContext(parent context.Context, sigs ...os.Signal) (context.Context, context.CancelFunc) {
-	if len(sigs) == 0 {
-		sigs = []os.Signal{syscall.SIGINT, syscall.SIGTERM}
-	}
-	return signal.NotifyContext(parent, sigs...)
+func NewContext(parent context.Context) (context.Context, context.CancelFunc) {
+	return signal.NotifyContext(parent, syscall.SIGINT, syscall.SIGTERM)
 }
 
 // Run starts srv and blocks until ctx is cancelled or the server fails.
