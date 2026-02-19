@@ -42,7 +42,7 @@ func TestRunGracefulShutdown(t *testing.T) {
 
 	done := make(chan error, 1)
 	go func() {
-		done <- graceful.Run(ctx, srv, 5*time.Second)
+		done <- graceful.Run(ctx, srv, graceful.Config{ShutdownTimeout: 5 * time.Second})
 	}()
 
 	if err := waitForServer(addr, 2*time.Second); err != nil {
@@ -72,7 +72,7 @@ func TestRunServerError(t *testing.T) {
 
 	srv := &http.Server{Addr: addr, Handler: http.DefaultServeMux}
 
-	err = graceful.Run(context.Background(), srv, 5*time.Second)
+	err = graceful.Run(context.Background(), srv, graceful.Config{ShutdownTimeout: 5 * time.Second})
 	if err == nil {
 		t.Fatal("expected error when port is already in use, got nil")
 	}
@@ -87,10 +87,13 @@ func TestRunCleanup(t *testing.T) {
 	var called []string
 	done := make(chan error, 1)
 	go func() {
-		done <- graceful.Run(ctx, srv, 5*time.Second,
-			func() { called = append(called, "first") },
-			func() { called = append(called, "second") },
-		)
+		done <- graceful.Run(ctx, srv, graceful.Config{
+			ShutdownTimeout: 5 * time.Second,
+			Cleanups: []func(){
+				func() { called = append(called, "first") },
+				func() { called = append(called, "second") },
+			},
+		})
 	}()
 
 	if err := waitForServer(addr, 2*time.Second); err != nil {
@@ -127,7 +130,7 @@ func TestRunHandlesRequests(t *testing.T) {
 
 	done := make(chan error, 1)
 	go func() {
-		done <- graceful.Run(ctx, srv, 5*time.Second)
+		done <- graceful.Run(ctx, srv, graceful.Config{ShutdownTimeout: 5 * time.Second})
 	}()
 
 	if err := waitForServer(addr, 2*time.Second); err != nil {
