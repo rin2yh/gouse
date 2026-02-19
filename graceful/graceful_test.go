@@ -192,3 +192,55 @@ func TestRunHandlesRequests(t *testing.T) {
 		t.Fatal("server did not shut down in time")
 	}
 }
+
+func TestRunShutdownError(t *testing.T) {
+	mux := http.NewServeMux()
+
+	// Use a very short shutdown timeout so that an in-flight request
+	// will cause http.Server.Shutdown to time out and return an error.
+	shortShutdownTimeout := 50 * time.Millisecond
+
+	mux.HandleFunc("/hang", func(w http.ResponseWriter, r *http.Request) {
+		// Sleep longer than the shutdown timeout to force a timeout error.
+		time.Sleep(2 * shortShutdownTimeout)
+		w.WriteHeader(http.StatusOK)
+	})
+
+	srv, addr := newTestServer(t, mux)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	done := make(chan error, 1)
+	go func() {
+		done <- graceful.Run(ctx, srv, &graceful.Config{
+			ShutdownTimeout: shortShutdownTimeout,
+		})
+	}()
+
+	if err := waitForServer(addr, testStartTimeout); err != nil {
+		t.Fatal("server did not start in time:", err)
+	}
+
+	// Start a hanging request that will still be running when shutdown begins.
+	go func() {
+		resp, err := http.Get("http://" + addr + "/hang")
+		if err == nil && resp != nil {
+			resp.Body.Close()
+		}
+	}()
+
+	// Give the request a moment to reach the handler.
+	time.Sleep(10 * time.Millisecond)
+
+	// Trigger shutdown.
+	cancel()
+
+	select {
+	case err := <-done:
+		if err == nil {
+			t.Fatal("expected non-nil error when shutdown fails, got nil")
+		}
+	case <-time.After(testShutdownTimeout):
+		t.Fatal("server did not shut down in time")
+	}
+}
