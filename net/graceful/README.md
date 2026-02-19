@@ -36,3 +36,26 @@ if err := graceful.Run(ctx, srv, &graceful.Config{
 |-------|------|---------|-------------|
 | `ShutdownTimeout` | `time.Duration` | `5s` | Maximum time to wait for in-flight requests to complete |
 | `Cleanups` | `[]func()` | none | Functions called in order after the server shuts down |
+
+## Benchmarks
+
+Measured with `go test -run=^$ -bench=. -benchmem` on the following environment (library minimum supported version is Go 1.21, per `go.mod`):
+
+- Go 1.24.7 linux/amd64 (benchmark runtime; library supports Go 1.21+)
+- CPU: Intel Xeon Platinum 8581C @ 2.10GHz
+
+| Benchmark | ns/op | B/op | allocs/op |
+|-----------|------:|-----:|----------:|
+| `BenchmarkShutdown/cleanups=0` | 214,314 | 1,258 | 26 |
+| `BenchmarkShutdown/cleanups=1` | 206,702 | 1,256 | 26 |
+| `BenchmarkShutdown/cleanups=5` | 233,014 | 1,256 | 26 |
+| `BenchmarkShutdown/cleanups=10` | 244,012 | 1,257 | 26 |
+
+Each iteration covers a full shutdown cycle: context cancellation → `Shutdown()` → cleanup execution.
+Memory footprint is constant regardless of the number of cleanup functions, since cleanup functions themselves are not allocated by this package.
+
+To run on your own machine:
+
+```sh
+go test -run=^$ -bench=. -benchmem ./net/graceful/
+```
