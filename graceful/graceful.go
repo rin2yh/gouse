@@ -108,7 +108,7 @@ func Run(parent context.Context, srv Server, cfg *Config) error {
 	// and been lost when the select chose the ctx.Done branch.
 	srvErr := <-serverErr
 
-	runCleanups(cfg.Cleanups)
+	cleanup(cfg.Cleanups)
 
 	if srvErr != nil {
 		return srvErr
@@ -116,19 +116,18 @@ func Run(parent context.Context, srv Server, cfg *Config) error {
 	return shutdownErr
 }
 
-// runCleanups calls each cleanup in order. If any cleanup panics, the
-// remaining cleanups still run; the first panic value is re-raised after
-// all cleanups have completed.
-func runCleanups(cleanups []func()) {
+// cleanup calls each fn in order. If one panics, the rest still run;
+// the first panic value is re-raised after all have completed.
+func cleanup(fns []func()) {
 	var panicVal any
-	for _, cleanup := range cleanups {
+	for _, fn := range fns {
 		func() {
 			defer func() {
 				if r := recover(); r != nil && panicVal == nil {
 					panicVal = r
 				}
 			}()
-			cleanup()
+			fn()
 		}()
 	}
 	if panicVal != nil {
