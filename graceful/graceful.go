@@ -72,16 +72,12 @@ type Config struct {
 //
 // If cfg is nil, a 5-second shutdown timeout is used with no cleanups.
 func Run(parent context.Context, srv Server, cfg *Config) error {
-	ctx, stop := signal.NotifyContext(parent, syscall.SIGINT, syscall.SIGTERM)
-	defer stop()
-
 	if cfg == nil {
 		cfg = &Config{}
 	}
-	timeout := defaultShutdownTimeout
-	if cfg.ShutdownTimeout > 0 {
-		timeout = cfg.ShutdownTimeout
-	}
+
+	ctx, stop := signal.NotifyContext(parent, syscall.SIGINT, syscall.SIGTERM)
+	defer stop()
 
 	serverErr := make(chan error, 1)
 	go func() {
@@ -97,6 +93,10 @@ func Run(parent context.Context, srv Server, cfg *Config) error {
 	case <-ctx.Done():
 	}
 
+	timeout := defaultShutdownTimeout
+	if cfg.ShutdownTimeout > 0 {
+		timeout = cfg.ShutdownTimeout
+	}
 	// context.WithoutCancel preserves values (trace IDs, loggers) from ctx
 	// while preventing the already-cancelled ctx from short-circuiting shutdown.
 	shutdownCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), timeout)
